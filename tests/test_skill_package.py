@@ -1,4 +1,4 @@
-"""Keep the distribution discoverable without duplicate skill definitions."""
+"""Validate the Claude distribution and the Codex skill installation."""
 import json
 from pathlib import Path
 import unittest
@@ -9,9 +9,24 @@ PACKAGE = ROOT / "skills" / "yomiyasu"
 
 
 class SkillPackageTests(unittest.TestCase):
-    def test_single_discoverable_entrypoint(self):
+    def test_discoverable_entrypoints(self):
         entries = sorted(ROOT.rglob("SKILL.md"))
-        self.assertEqual(entries, [PACKAGE / "SKILL.md"])
+        codex_package = ROOT / ".agents" / "skills" / "yomiyasu"
+        self.assertEqual(entries, sorted([PACKAGE / "SKILL.md", codex_package / "SKILL.md"]))
+
+    def test_codex_copy_preserves_all_files(self):
+        codex_package = ROOT / ".agents" / "skills" / "yomiyasu"
+
+        def files(base):
+            return {p.relative_to(base): p for p in base.rglob("*")
+                    if p.is_file() and "__pycache__" not in p.parts}
+
+        source = files(PACKAGE)
+        installed = files(codex_package)
+        self.assertEqual(source.keys(), installed.keys())
+        for relative in source:
+            with self.subTest(resource=relative):
+                self.assertEqual(source[relative].read_bytes(), installed[relative].read_bytes())
 
     def test_plugin_points_to_skill_parent(self):
         manifest = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
