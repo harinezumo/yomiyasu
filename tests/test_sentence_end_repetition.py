@@ -2,7 +2,6 @@
 """Issue #5: 文末の連続を段落内で数え、元の行番号を保つ回帰テスト。"""
 
 import json
-import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -13,6 +12,8 @@ SCRIPTS_DIR = REPO_DIR / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import yomiyasu_lint
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from portable import run_text  # noqa: E402
 
 
 class TestSentenceEndRepetition(unittest.TestCase):
@@ -194,11 +195,10 @@ class TestSentenceEndRepetition(unittest.TestCase):
 
     def test_public_cli_strict_accepts_the_issue5_input(self):
         text = "設定を読みます。\n\n起動します。\n\n画面を確認します。"
-        result = subprocess.run(
+        result = run_text(
             [sys.executable, "-B", str(SCRIPTS_DIR / "yomiyasu_lint.py"), "--json", "--strict"],
             input=text,
             capture_output=True,
-            text=True,
             encoding="utf-8",
             check=False,
         )
@@ -206,16 +206,15 @@ class TestSentenceEndRepetition(unittest.TestCase):
         self.assertEqual(result.stderr, "")
         report = json.loads(result.stdout)
         self.assertEqual(report["findings"], [])
-        self.assertEqual(report["score"], 100)
-        self.assertTrue(report["is_clean"])
+        self.assertEqual(report["rule_penalty_score"], 100)
+        self.assertTrue(report["no_rule_findings"])
 
     def test_public_cli_strict_still_rejects_three_in_one_paragraph(self):
         text = "設定を読みます。\n起動します。\n画面を確認します。"
-        result = subprocess.run(
+        result = run_text(
             [sys.executable, "-B", str(SCRIPTS_DIR / "yomiyasu_lint.py"), "--json", "--strict"],
             input=text,
             capture_output=True,
-            text=True,
             encoding="utf-8",
             check=False,
         )
@@ -229,8 +228,9 @@ class TestSentenceEndRepetition(unittest.TestCase):
         self.assertEqual(finding["line"], 3)
         self.assertEqual(finding["snippet"], "画面を確認します。")
         self.assertEqual(set(finding), {"rule", "line", "severity", "message", "snippet"})
-        self.assertEqual(report["score"], 95)
-        self.assertFalse(report["is_clean"])
+        # 地の文1,000字未満、warn 1件の重み2で95。
+        self.assertEqual(report["rule_penalty_score"], 95)
+        self.assertFalse(report["no_rule_findings"])
 
 
 if __name__ == "__main__":

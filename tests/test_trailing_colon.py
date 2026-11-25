@@ -3,7 +3,6 @@
 
 import json
 from pathlib import Path
-import subprocess
 import sys
 import unittest
 
@@ -11,6 +10,8 @@ import unittest
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "yomiyasu_lint.py"
 sys.path.insert(0, str(SCRIPT.parent))
 import yomiyasu_lint
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from portable import run_text  # noqa: E402
 
 
 ISSUE4_DOCUMENT = """# CIの作業手順
@@ -37,8 +38,8 @@ class TestTrailingColon(unittest.TestCase):
     def test_issue4_full_document_has_no_findings(self):
         result = yomiyasu_lint.lint_text(ISSUE4_DOCUMENT)
         self.assertEqual(result["findings"], [])
-        self.assertTrue(result["is_clean"])
-        self.assertEqual(result["score"], 100)
+        self.assertTrue(result["no_rule_findings"])
+        self.assertEqual(result["rule_penalty_score"], 100)
 
     def test_label_values_do_not_become_trailing_colons(self):
         cases = (
@@ -126,10 +127,9 @@ another:
                 self.assertEqual([f for f in findings if f["rule"] == "trailing_colon"], [])
 
     def test_cli_strict_accepts_the_issue4_document(self):
-        process = subprocess.run(
+        process = run_text(
             [sys.executable, "-B", str(SCRIPT), "--json", "--strict"],
             input=ISSUE4_DOCUMENT,
-            text=True,
             encoding="utf-8",
             capture_output=True,
             timeout=10,
@@ -137,10 +137,13 @@ another:
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
         self.assertEqual(process.stderr, "")
         result = json.loads(process.stdout)
-        self.assertEqual(set(result), {"score", "is_clean", "metrics", "findings"})
+        # G7（種類と読者の設計 9.3）: context を足した
+        self.assertEqual(set(result), {"format", "format_version", "tool_version", "candidate_count", "counts",
+                                       "no_rule_findings", "rule_penalty_score", "not_judged", "context", "metrics",
+                                       "findings"})
         self.assertEqual(result["findings"], [])
-        self.assertTrue(result["is_clean"])
-        self.assertEqual(result["score"], 100)
+        self.assertTrue(result["no_rule_findings"])
+        self.assertEqual(result["rule_penalty_score"], 100)
 
     def test_cli_json_warning_and_strict_exit_contract(self):
         for strict, expected_exit in ((False, 0), (True, 1)):
@@ -148,10 +151,9 @@ another:
                 command = [sys.executable, "-B", str(SCRIPT), "--json"]
                 if strict:
                     command.append("--strict")
-                process = subprocess.run(
+                process = run_text(
                     command,
                     input="本文です。\n確認事項：",
-                    text=True,
                     encoding="utf-8",
                     capture_output=True,
                     timeout=10,
@@ -159,9 +161,13 @@ another:
                 self.assertEqual(process.returncode, expected_exit, process.stdout + process.stderr)
                 self.assertEqual(process.stderr, "")
                 result = json.loads(process.stdout)
-                self.assertEqual(set(result), {"score", "is_clean", "metrics", "findings"})
-                self.assertFalse(result["is_clean"])
-                self.assertEqual(result["score"], 95)
+                # G7（種類と読者の設計 9.3）: context を足した
+                self.assertEqual(set(result), {"format", "format_version", "tool_version", "candidate_count", "counts",
+                                               "no_rule_findings", "rule_penalty_score", "not_judged", "context",
+                                               "metrics", "findings"})
+                self.assertFalse(result["no_rule_findings"])
+                # 地の文1,000字未満、warn 1件の重み2で95。
+                self.assertEqual(result["rule_penalty_score"], 95)
                 self.assertEqual(len(result["findings"]), 1)
                 finding = result["findings"][0]
                 self.assertEqual(set(finding), {"rule", "line", "severity", "message", "snippet"})
